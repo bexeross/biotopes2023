@@ -161,4 +161,8 @@ colnames(envData_f)
 write.csv(envData_f, file=file.path(dataPath,(paste0("envData_", Sys.Date(),".csv"))))# 1 per R dataset
 ```
 
-
+# clean up- don't need to have all loaded for next steps
+```{r}
+rm(list= ls()[!(ls() %in% c('dataPath','outPath', 'sppdens','refer', 'sample_info','taxonary',
+                            'utmize','classreport','spquery', 'getsamplesingrp'))]) 
+```
