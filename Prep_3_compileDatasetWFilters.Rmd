@@ -32,11 +32,16 @@ library(tidyr)
 Loaded from file to ensure stable random subsample - check dates are correct version
 
 ```{r}
-activeSppFilter<-read.csv(file.path(dataPath,"activeSpeciesfilter_2022-10-19.csv"))
+# read needed shapefile
+dsn <- "U:/Mareano/VIDEOLAB/VIDEO DATA/200m_scale_species_by_sample/GIS_Data"
+gbk <- readOGR(dsn = dsn, layer = "MAREANO_GBK-sampled_areas_311221") 
+
+# filters
+activeSppFilter<-read.csv(file.path(dataPath,"biotopeSpeciesfilter_2022-12-07.csv"))
 
 ## SELECT CORRECT ONE
 #activeStFilter<-read.csv(file.path(dataPath,"activeSubsampleOslo_2022-10-19.csv")) # wholeDataset "OSLO"
-activeStFilter<-read.csv(file.path(dataPath,"activeSubsample_2022-10-19.csv")) # subsampled 1perR
+activeStFilter<-read.csv(file.path(dataPath,"biotopeInputSamples_2022-12-07.csv")) # subsampled 1perR
 
 length(unique(activeSppFilter$SampID)) # number of samples in sp filtered dataset
 length(unique(activeStFilter$SampID)) # number of samples in st filtered dataset
@@ -105,7 +110,18 @@ write.csv(wideData, file=file.path(dataPath,(paste0("widedata_", Sys.Date(),".cs
 
 # ALIGN ENV dataset to final selection of samples
 ```{r}
-envData<-read.csv(file.path(dataPath,"samples_env.csv"))
+envData<-read.csv(file.path(dataPath,"samples_env_plus.csv"))
+envData<- envData %>% select(!c("sw_spd_max","sw_spd_mean")) #remove sandwave area data - not useful in biotope analysis
+
+sedVid_long<-read.csv(file.path(dataPath,"sedimMeans.csv")) %>% as.data.frame
+sedVid<-sedVid_long %>% pivot_wider(id_cols=SampID,
+                                    names_from = vSubstrate,
+                                    values_from=mean_percent,
+                                    values_fill=NA)
+
+envData<-left_join(envData,sedVid, by=c("SampID"))
+
+
 
 envData_f<-envData%>% filter(SampID%in%wideData$SampID) 
 length(unique(envData_f$SampID)) # number of samples in env dataset
@@ -120,9 +136,29 @@ par(mar = c(0, 0, 0, 0) + 0.1)
 plot(gbk, border="green")
 plot(env_fin_spat, axes = FALSE, cex = 0.6, add = TRUE) 
 box() 
+```
 
+# View vars
+```{r}
+envData_f<-envData_f %>% select(!c("X.1",
+                                   "Join_Count",
+                                   "TARGET_FID",
+                                   "SampID_X",
+                                   "SampID_Y", 
+                                   "Shrtr133m",
+                                   "SampID2_X",
+                                   "SampID2_Y",
+                                   "m_min", 
+                                   "m_max", 
+                                   "OBJECTID"))
+colnames(envData_f)
+```
+
+
+
+```{r}
 #write.csv(envData_f, file=file.path(dataPath,(paste0("envDataOslo_", Sys.Date(),".csv"))))# Whole dataset "OSLO"
 write.csv(envData_f, file=file.path(dataPath,(paste0("envData_", Sys.Date(),".csv"))))# 1 per R dataset
 ```
-```
+
 
