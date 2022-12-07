@@ -35,7 +35,6 @@ library(tidyverse)
 dsn <- "U:/Mareano/VIDEOLAB/VIDEO DATA/200m_scale_species_by_sample/GIS_Data"
 gbk <- readOGR(dsn = dsn, layer = "MAREANO_GBK-sampled_areas_311221") 
   #%>% fortify
-
 ```
 
 # Station-level quality assessment
@@ -259,4 +258,10 @@ If necessary take a subset of samples then write the subsample to csv with sys.D
 # ## export subsampled dataset with 1 sample per R station
 # write.csv(sample_info_f_ss, file=file.path(dataPath,(paste0("biotopeInputSubsample_", Sys.Date(),".csv"))))
 
+```
+
+# clean up- don't need to have all loaded for next steps
+```{r}
+rm(list= ls()[!(ls() %in% c('dataPath','outPath', 'sppdens','refer', 'sample_info','taxonary',
+                            'utmize','classreport','spquery', 'getsamplesingrp'))]) 
 ```
