@@ -110,9 +110,11 @@ write.csv(wideData, file=file.path(dataPath,(paste0("widedata_", Sys.Date(),".cs
 
 # ALIGN ENV dataset to final selection of samples
 ```{r}
+# import env data main...
 envData<-read.csv(file.path(dataPath,"samples_env_plus.csv"))
 envData<- envData %>% select(!c("sw_spd_max","sw_spd_mean")) #remove sandwave area data - not useful in biotope analysis
 
+#import sedMeans (video analysis sed percentages)
 sedVid_long<-read.csv(file.path(dataPath,"sedimMeans.csv")) %>% as.data.frame
 sedVid<-sedVid_long %>% pivot_wider(id_cols=SampID,
                                     names_from = vSubstrate,
@@ -121,7 +123,18 @@ sedVid<-sedVid_long %>% pivot_wider(id_cols=SampID,
 
 envData<-left_join(envData,sedVid, by=c("SampID"))
 
+#import trawlmarks
+trawlm <- read.csv(file.path(dataPath,"removed_observations.csv"), sep ="|") #i.e. non-species
+trawlm <- trawlm %>% separate(col=clean_taxonomy, into = c("observation_main", "observation_modifier"), sep =";") %>%
+  filter(observation_main == "Trawl mark")
 
+trawlwide <- trawlm %>% pivot_wider(names_from = observation_main,
+                                    values_from = density_n_100m2,
+                                    values_fill = 0,
+                                    values_fn = sum) %>%
+  select(c("SampID","Trawl mark"))
+
+envData<-left_join(envData,trawlwide, by=c("SampID"))
 
 envData_f<-envData%>% filter(SampID%in%wideData$SampID) 
 length(unique(envData_f$SampID)) # number of samples in env dataset
