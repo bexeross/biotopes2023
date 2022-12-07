@@ -1,0 +1,128 @@
+---
+title: "Compile Filtered Dataset - R Notebook"
+authors:  Rebecca Ross and Genoveva Gonzalez Mirelis
+date: "Last Rendered on `r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_notebook: 
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    fig_width: 7
+    fig_height: 7
+always_allow_html: true 
+---
+
+NB This script is copied from the Mareano/NiN v3.0 work "videoEnvDataPrep" project, and amended for biotope analysis settings.
+
+
+#Assumptions
+This script allows you to run species/ station filters/ any other filters in what ever order suits you, then compile the final objects here to ensure you are getting the up-to-date filters applied.
+
+Assumes:
+- pre run config
+- pre run Filters scripts
+
+
+#Libraries
+```{r}
+library(dplyr)
+library(tidyr)
+```
+#inputs
+Loaded from file to ensure stable random subsample - check dates are correct version
+
+```{r}
+activeSppFilter<-read.csv(file.path(dataPath,"activeSpeciesfilter_2022-10-19.csv"))
+
+## SELECT CORRECT ONE
+#activeStFilter<-read.csv(file.path(dataPath,"activeSubsampleOslo_2022-10-19.csv")) # wholeDataset "OSLO"
+activeStFilter<-read.csv(file.path(dataPath,"activeSubsample_2022-10-19.csv")) # subsampled 1perR
+
+length(unique(activeSppFilter$SampID)) # number of samples in sp filtered dataset
+length(unique(activeStFilter$SampID)) # number of samples in st filtered dataset
+```
+### check location of sample subset
+```{r}
+sfilt_fin_spat <- activeStFilter %>%
+  select(x_coord,y_coord) %>%
+  SpatialPoints
+
+par(mar = c(0, 0, 0, 0) + 0.1)
+plot(gbk, border="green")
+plot(sfilt_fin_spat, axes = FALSE, cex = 0.6, add = TRUE) 
+box() 
+```
+
+
+#Combine filters to form dataset
+
+Use output of stationFilters to select from filtered species data 
+```{r}
+stFilt.sel.sppDens<-activeSppFilter%>% filter(SampID%in%activeStFilter$SampID) 
+
+#check effect
+length(unique(activeSppFilter$SampID)) # number of samples in sp filtered dataset
+length(unique(stFilt.sel.sppDens$SampID)) # number of samples in station filtered sp filtered dataset 
+```
+
+### check location of species filter applied to sample filter subset
+```{r}
+spstfilt_fin<-sample_info %>%
+  filter(SampID2%in%stFilt.sel.sppDens$SampID)
+
+
+spstfilt_fin_spat <- spstfilt_fin %>%
+  select(x_coord,y_coord) %>%
+  SpatialPoints
+
+par(mar = c(0, 0, 0, 0) + 0.1)
+plot(gbk, border="green")
+plot(spstfilt_fin_spat, axes = FALSE, cex = 0.6, add = TRUE) 
+box() 
+```
+
+
+
+#Change to wide format for analyses
+
+```{r}
+
+wideData <- stFilt.sel.sppDens %>% select(-c(TotAbu_pseudocount, X)) %>%
+  mutate(clean_taxonomy = gsub(" ","_",clean_taxonomy)) %>%
+ # mutate(clean_taxonomy = gsub("\\..*","",clean_taxonomy, fixed=FALSE)) %>%#removes whats after the ;
+  pivot_wider(names_from = clean_taxonomy, values_from = density_n100m2, values_fill = 0, values_fn = sum)%>%
+  select("SampID",sort(colnames(.))) #nice to have the cols alphabetical
+
+head(wideData)
+
+```
+
+#output dataset
+```{r}
+#write.csv(wideData, file=file.path(dataPath,(paste0("widedataOslo_", Sys.Date(),".csv"))))# Whole dataset "OSLO"
+write.csv(wideData, file=file.path(dataPath,(paste0("widedata_", Sys.Date(),".csv"))))# 1 per R dataset
+```
+
+# ALIGN ENV dataset to final selection of samples
+```{r}
+envData<-read.csv(file.path(dataPath,"samples_env.csv"))
+
+envData_f<-envData%>% filter(SampID%in%wideData$SampID) 
+length(unique(envData_f$SampID)) # number of samples in env dataset
+table(duplicated(envData_f$SampID))
+envData_f$SampID[duplicated(envData_f$SampID)]
+
+env_fin_spat <- envData_f %>%
+  select(x_coord,y_coord) %>%
+  SpatialPoints
+
+par(mar = c(0, 0, 0, 0) + 0.1)
+plot(gbk, border="green")
+plot(env_fin_spat, axes = FALSE, cex = 0.6, add = TRUE) 
+box() 
+
+#write.csv(envData_f, file=file.path(dataPath,(paste0("envDataOslo_", Sys.Date(),".csv"))))# Whole dataset "OSLO"
+write.csv(envData_f, file=file.path(dataPath,(paste0("envData_", Sys.Date(),".csv"))))# 1 per R dataset
+```
+```
+
