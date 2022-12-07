@@ -1,0 +1,132 @@
+---
+title: "species filters for NiN/biotope classification analyses - R Notebook"
+authors: Rebecca Ross and Genoveva Gonzales-Mirelis
+date: "Last Rendered on `r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_notebook: 
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    fig_width: 7
+    fig_height: 7
+always_allow_html: true 
+---
+
+NB This script is copied from the Mareano/NiN v3.0 work "videoEnvDataPrep" project, and amended for biotope analysis settings.
+
+# INTRODUCTION
+
+This script assumes that MarVid data has passed through the rStation and sample filters already, and will now undergo species filters that are common between NiN/biotope analyses. Some additional filters may only be applied on an analysis-specific basis - these are found within the analyses projects themselves (e.g. deepseaNiN or twinspanBiotopes).
+
+#libraries
+```{r}
+library(tidyr)
+library(dplyr)
+```
+
+
+# Inputs
+- Assumes have run config and stationFilters scripts already.
+- Needs Taxonary
+(loaded into environment when you have run the config.R script in this repo)
+
+# Deal with analysis name replacements
+
+```{r}
+taxonary$OrigRefList<-taxonary$`Reference List`
+
+#taxonary$`Reference List`[!is.na(taxonary$Analysis_name)]<-taxonary$Analysis_name
+
+taxonary<-taxonary %>% mutate(`Reference List`= ifelse(!is.na(Analysis_name),Analysis_name,OrigRefList
+))
+
+```
+
+
+#Filter taxonary
+
+RULES
+
+- Remove object_type !=Organism
+```{r}
+t.org <-subset(taxonary, Object_type=="Organism" )
+```
+
+- Remove specificity =4
+```{r}
+t.orgSpec<-subset(t.org, Specificity<4)
+```
+
+- Remove Size_class = Macro
+```{r}
+t.orgSpecMega<-subset(t.orgSpec, Size_class=="OK")
+```
+
+- Remove ecosystem_section = Demersal/Hyperbenthic
+```{r}
+t.orgSpecMegaBenthic<-subset(t.orgSpecMega, Ecosystem_section=="Benthic" )
+unique(t.orgSpecMegaBenthic$`Reference List`)
+```
+
+
+
+
+
+
+
+# Select from sppdens (stationFiltered) object
+
+```{r}
+sel.sppDens<-sppdens%>% filter(clean_taxonomy%in%t.orgSpecMegaBenthic$`Reference List`)
+
+sel.sppDens.nona <- sel.sppDens[complete.cases(sel.sppDens),]
+
+unique(sel.sppDens.nona$clean_taxonomy) #391 taxa after selection with the 529 selected taxonary taxa - why?
+
+#unique(sppdens$clean_taxonomy) #637 taxa in spp dens
+
+# check.sppDens<-sppdens%>% filter(clean_taxonomy%in%taxonary$`Reference List`)
+# unique(check.sppDens$clean_taxonomy) #637 of spp dens found in taxonary.
+
+# this is hopefully correct - the 391 compared to the 529 approved taxa may be due to the removal of coastal stations and still portions of transects
+```
+# Deal with specificity <1
+
+NB Not an issue in current dataset so this section is incomplete and does not need to be run.
+NB refactor for .nona object
+```{r}
+# 
+# #list taxa with specificity <1 (sub species level)
+# t.sel.specLT1<-subset(t.orgSpecMegaBenthic, Specificity<1)
+# 
+# #create look up table converting these to species level (remove what is after the ';')
+# lkup.specLT1<-t.sel.specLT1%>%
+#   select(`Reference List`) %>%
+#   mutate(clean_taxonomy = gsub(";.*","",`Reference List`))
+# 
+# #Check if those feature in sppdens dataset (none in sppDens right now, so check code with future dataset)
+# 
+# check.specLT1.sppDens<-sppdens%>% filter(clean_taxonomy%in%lkup.specLT1$`Reference List`) #none in spdens, so no issue right now
+# check.specLT1.sppDens
+# #find and replace using the lookup table (not checked if working, and still incomplete, check with future data if there are <1 specificity taxa recorded in the sppdens dataset)
+# 
+# # sel.sppDens$clean_taxonomy2<-with (sel.sppDens, replace(clean_taxonomy, which(clean_taxonomy==lkup.specLT1$`Reference List`), lkup.specLT1$clean_taxonomy))
+# #unique(sel.sppDens.cln$clean_taxonomy2)
+  
+```
+# Final object
+```{r}
+head(sel.sppDens.nona)
+length(unique(sel.sppDens.nona$clean_taxonomy))
+table(is.na(sel.sppDens.nona))
+
+```
+
+write the subsample to csv with sys.Date appended to keep track of which is the active sample that day
+```{r}
+write.csv(sel.sppDens.nona, file=file.path(dataPath,(paste0("activeSpeciesfilter_", Sys.Date(),".csv"))))
+```
+
+
+
+
