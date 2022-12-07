@@ -1,0 +1,274 @@
+---
+title: "Prepare input data with analysis specific modifications and fit first Twinspan model"
+authors: Genoveva Gonzalez Mirelis and Rebecca Ross
+date: "Last Rendered on `r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  html_notebook: 
+    toc: yes
+    toc_depth: 2
+    toc_float: yes
+    fig_width: 7
+    fig_height: 7
+always_allow_html: true 
+---
+
+## Libraries
+Load necessary libraries
+```{r}
+library(twinspan, quietly = TRUE)
+library(tidyr, quietly = TRUE)
+library(dplyr, quietly = TRUE)
+library(rgdal, quietly = TRUE)
+library(sf, quietly = TRUE)
+library(rgeos, quietly = TRUE)
+```
+
+## Import other data
+Import and glance additional data
+```{r}
+refer <- read.csv(file.path(dataPath,"reference.csv"), sep ="|")
+refer
+```
+
+
+## Make the matrix into wide format
+Convert from long format input to a wide format where rows are samples and columns are species. Take a glance
+```{r}
+trimmedwide <- trimmed %>% select(-c(TotAbu_pseudocount,TotAbu_count,density_n_100m2_count)) %>%
+  mutate(new_name = gsub(" ","",new_name)) %>%
+  mutate(new_name = gsub("\\.","",new_name)) %>%
+  mutate(new_name = tolower(new_name)) %>%
+  pivot_wider(names_from = new_name, values_from = density_n_100m2_pseudocount, values_fill = 0, values_fn = sum)
+
+head(trimmedwide)
+```
+
+## Subset stations
+### Assess data completeness
+We should use only video lines where data is complete. We determine that by looking at the total number of biological annotations relative to the towed distance. Note that total number of biological annotations depends on species richness, so expect large variation 
+```{r}
+hist(refer$total_bio/refer$towed_distance, main = "Distribution of records:distance ratio",
+     xlab = "total records : towed distance")
+```
+### Make a list of "good" stations
+Check how much data we would be using/discarding for each threshold
+```{r}
+thres <- 5
+good <- refer$sample_no[which(refer$total_bio/refer$towed_distance<thres)]
+
+sample_info<-read.csv(file.path(dataPath,"sample_info.csv"))
+sample_info<-sample_info %>%
+  mutate(area_m2 = SegLengthM * meanFoV_m) # I forgot to export/import this column!
+
+sample_info$SegLengthM <- with(sample_info, replace(SegLengthM, which(SampID == "2121_B"), sum(57.4500,114.4500)))
+sample_info$area_m2 <- with(sample_info, replace(area_m2, which(SampID == "2121_B"), sum(123.1584,413.2917)))
+sample_info$NumSplits <- with(sample_info, replace(NumSplits, which(SampID == "2121_B"), -1))
+sample_info$SegLengthM <- with(sample_info, replace(SegLengthM, which(SampID == "1920_00"), sum(135.5369,135.5369)))
+sample_info$area_m2 <- with(sample_info, replace(area_m2, which(SampID == "1920_00"), sum(210.6630,236.5845)))
+sample_info$NumSplits <- with(sample_info, replace(NumSplits, which(SampID == "1920_00"), -1))
+sample_info$ok_vision <- with(sample_info, replace(ok_vision, which(SampID == "1920_00"), mean(0.2235294,0.6363636)))
+sample_info$poor_vision <- with(sample_info, replace(poor_vision, which(SampID == "1920_00"), mean(0.7764706,0.3636364)))
+
+length(good)/length(unique(sample_info$VL))
+```
+### Information on discarded stations
+Gather information on discarded stations to make sure we are not discarding good data
+```{r}
+refer %>% filter(sample_no%in%unique(sample_info$VL)) %>%
+  filter(!(sample_no%in%good)) #%>%
+  #print(n=1000)
+  #View
+
+```
+
+### Spatial selection of stations
+Load the shapefile showing the GBK-sampled areas (it will need to be updated), overlay, and select
+```{r}
+# read shapefile
+dsn <- "U:/Mareano/VIDEOLAB/VIDEO DATA/200m_scale_species_by_sample/GIS_Data"
+gbk <- readOGR(dsn = dsn, layer = "MAREANO_GBK-sampled_areas_100820") #encoding!
+
+# convert reference to spatial points
+refer_spat <- refer %>%
+  select(lon_mid_dec,lat_mid_dec) %>%
+  SpatialPoints %>%
+  SpatialPointsDataFrame(refer) %>%
+  utmize
+
+# specify areas
+areas <-c("Kongsfjorden indre indre",
+          "Kongsfjorden indre indre rest",
+          "Kongsfjorden ytre indre",
+          "Rijpfjorden indre indre rest",
+          "Rijpfjorden indre-indre",
+          "Rijpfjorden indre-indre_ny"
+          )
+
+aoi <- gbk %>% 
+  subset(Name%in%areas) %>%
+  gUnaryUnion
+
+# select by location
+fjord <- refer %>%
+  select(sample_no) %>%
+  subset(!is.na(over(refer_spat,aoi)))
+
+# add manually to selection, when needed
+fjord <- fjord %>% add_row(sample_no = c(2112,
+                                         2116,
+                                         2117,
+                                         2118#,
+                                        #,
+                                        #,
+                                        #
+                                        ))
+
+refer_spat %>% subset(sample_no%in%fjord$sample_no) %>%
+  plot
+
+```
+
+## Subset samples
+### Import necessary data
+Read in additional data
+```{r}
+
+#refergood <- subset(refer, refer$sample_no%in%good)
+
+sample_info
+```
+
+### Examine distribution of surveyed distance and area
+Examine the distribution of total area and length of samples
+```{r}
+par(mfrow=c(1,2))
+hist(sample_info$area_m2, main ="Surveyed area", xlab = "Area (m2)")
+hist(sample_info$SegLengthM, main ="Surveyed distance", xlab = "Length (m)")
+```
+
+### Set thresholds for data quality
+Decide what is acceptable in terms of length of sample and picture quality. The percentages shown below are relative to the whole set of MAREANO stations (and not the "good" stations!)
+```{r, warning=FALSE}
+# thresholds for total surveyed area
+#survarea_upper <- 1200
+#survarea_lower <- 250
+
+# alternative, set thresholds for survey length (maybe better)
+length_lower <- 150
+length_upper <- 400 # is this too much?
+
+# threshold for picture quality
+# in English, Doc: "either unknown, or not more than half with no vision, or not more than one quarter with poor vision"
+poorvis_thres <- 0.75
+novis_thres <- 0.5
+
+#table(ifelse(is.na(sample_info$ok_vision),1,
+#                       ifelse(sample_info$poor_vision<poorvis_thres&sample_info$no_vision<novis_thres,1,0)))
+
+filter1 <- sum(with(sample_info, SegLengthM>length_lower&SegLengthM<length_upper))
+filter2 <- length(which(with(sample_info, ifelse(is.na(ok_vision),1,
+                    ifelse(poor_vision<poorvis_thres&no_vision<novis_thres,1,0)))==1))
+filter <- #sum(
+    rowSums(
+  cbind((with(sample_info, SegLengthM>length_lower&SegLengthM<length_upper)),ifelse(is.na(sample_info$ok_vision),1,
+       with(sample_info, ifelse(poor_vision<poorvis_thres & no_vision<novis_thres,1,0)))))==2
+#)
+
+# make filter for later use
+new_filter <- data.frame(SampID = sample_info$SampID,Filter = filter) %>%
+  left_join(data.frame(SampID=trimmedwide$SampID),., by = "SampID")%>%
+  select(Filter) %>%
+  pull(Filter)
+
+summary<-data.frame("length_filter_pass"=filter1/dim(sample_info)[1],
+                    "picqual_filter_pass" =filter2/dim(sample_info)[1],
+                    "both" = sum(filter)/dim(sample_info)[1])
+
+summary
+```
+
+## Missing data
+Provide explanations for missing species data
+
+### Sample level
+Which samples are in sample_info and not in matrix, and are they a whole video line or just a portion? If just a portion, it is assumed that no species were detected anywhere along that segment
+```{r}
+res.missing <- anti_join(sample_info,
+          pivot_wider(spmatrix,names_from = new_name, values_from = density_n_100m2_pseudocount, values_fill = 0, values_fn = sum),by = "SampID")[,c(1,2,4)] %>%
+  group_by(VL) %>%
+  summarize(SampID = SampID,
+            #NumSegments = NumSplits,
+            portion_missing = paste(as.character(length(VL)), as.character(NumSplits), sep ="/"),
+            .groups = "drop_last")
+
+res.missing
+```
+### Video line level
+Explanations for missing species data
+```{r}
+res <- anti_join(sample_info,
+          pivot_wider(spmatrix,names_from = new_name, values_from = density_n_100m2_pseudocount, values_fill = 0, values_fn = sum),by = "SampID")[,c(1,2,4)] %>%
+  group_by(VL) %>%
+  summarize(SampID = SampID,
+            whole_VL = length(VL)/NumSplits==1,
+            .groups = "drop_last")
+
+res <- filter(res,whole_VL) %>% group_by(VL) %>% summarize(VL=min(VL))
+
+res <- left_join(res,refer, by=c("VL"="sample_no"))
+
+shorten <- function(x) substr (x,1,20)
+#res <- 
+  res %>% select(VL,Notes, Notes.II,Comments,Other.comments,reason_excluded) %>%
+  mutate_all(shorten) %>%
+  mutate(Notes = ifelse(Notes == "in mareano raw",NA,Notes))
+
+```
+
+## Twinspan
+Perform the twinspan analysis
+
+### Fit the twinspan model
+Turn on or off the filters as you wish
+```{r, warning=FALSE}
+
+samples <- trimmedwide %>%
+  data.frame() %>%
+  filter(new_filter) %>%
+  filter(sample_info$VL[match(SampID, sample_info$SampID)]%in%good) %>%
+  select(SampID)
+
+coredata <- left_join(samples, trimmedwide)
+coredata <- coredata %>% select(-SampID)
+row.names(coredata) <- samples$SampID
+
+#cutlevels = c(0,100,200,400,1000)
+cutlevelsPaal = c(0,1,2,5,10,20)
+
+tw_1 <- coredata %>%
+  select(which(!is.na(colSums(.)))) %>%
+  #mutate_all(sqrt)%>%
+  twinspan(cutlevels = cutlevelsPaal, levmax = 15, groupmin = 3)
+
+#summary(tw_1)
+eval <- misclassified(tw_1)
+eval <- with(eval,  data.frame(SampID = samples$SampID[index], class = class, predicted = predicted))
+eval
+```
+## check excluded samples/stations
+outputting for more detailed explorations
+```{r}
+# excluded<-refer %>% filter(sample_no%in%unique(sample_info$VL)) %>%
+#   filter(!(sample_no%in%good))
+# 
+# write.csv(excluded, file = file.path(outPath, ("excluded_megaAnalysis.csv")))
+#   
+
+excl.samp<-sample_info %>%
+  anti_join(tw_1.df, by=c("SampID"="rowname"))%>%
+  left_join(refer, by=c("VL"="sample_no"))
+
+write.csv(excl.samp, file = file.path(outPath, ("excluded_samples.csv")))
+
+```
+
