@@ -15,12 +15,15 @@ always_allow_html: true
 ## Libraries
 Load necessary libraries
 ```{r}
-library(twinspan, quietly = TRUE)
-library(tidyr, quietly = TRUE)
-library(dplyr, quietly = TRUE)
-library(rgdal, quietly = TRUE)
-library(sf, quietly = TRUE)
-library(rgeos, quietly = TRUE)
+library(devtools)
+devtools::install_github("jarioksa/twinspan")
+install.packages("twinspan", repos="https://jarioksa.github.io/drat/")
+
+library(twinspan)
+library(tidyverse)
+library(rgdal)
+library(sf)
+library(rgeos)
 ```
 
 ## Import other data
