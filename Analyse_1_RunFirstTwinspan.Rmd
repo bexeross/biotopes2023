@@ -15,9 +15,14 @@ always_allow_html: true
 ## Libraries
 Load necessary libraries
 ```{r}
-library(devtools)
-devtools::install_github("jarioksa/twinspan")
-install.packages("twinspan", repos="https://jarioksa.github.io/drat/")
+# # NB if you need to install twinspan you need to RUN R/RSTUDIO AS ADMINSTRATOR
+# library(devtools)
+# devtools::install_github("jarioksa/twinspan")
+# 
+# #option 2 if that fails
+# #install.packages("twinspan", repos="https://jarioksa.github.io/drat/")
+
+###
 
 library(twinspan)
 library(tidyverse)
